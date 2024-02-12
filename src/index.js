@@ -1,8 +1,14 @@
 import fs from "fs";
-import "dotenv/config";
 import mysql from "mysql2";
 import { stringify } from "csv-stringify/sync";
 import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
+
+const bucketName = "wrparchive";
+const accessKeyId = "52d2a666e993b08710c56164c930032d";
+const secretAccessKey =
+  "4a8300b620494f1b3a506c61f70fd43a4c5d6fe88e6105db373f383f0965543d";
+const s3Endpoint =
+  "https://34f62f615789b088af9130d959f70465.r2.cloudflarestorage.com";
 
 const connection = mysql.createConnection({
   host: "localhost",
@@ -11,12 +17,21 @@ const connection = mysql.createConnection({
   database: "wrptest_2",
 });
 
+// const S3 = new S3Client({
+//   region: "auto",
+//   endpoint: process.env.s3Endpoint,
+//   credentials: {
+//     accessKeyId: process.env.accessKeyId,
+//     secretAccessKey: process.env.secretAccessKey,
+//   },
+// });
+
 const S3 = new S3Client({
   region: "auto",
-  endpoint: process.env.s3Endpoint,
+  endpoint: s3Endpoint,
   credentials: {
-    accessKeyId: process.env.accessKeyId,
-    secretAccessKey: process.env.secretAccessKey,
+    accessKeyId: accessKeyId,
+    secretAccessKey: secretAccessKey,
   },
 });
 
@@ -70,7 +85,7 @@ async function checkPictureExistence(pictureSubfolderMap, extensionObjectMap) {
   for (let i = 0; i < pathChecks.length; i += BATCH_SIZE) {
     const batch = pathChecks.slice(i, i + BATCH_SIZE);
     const promises = batch.map(({ pictureID, path }) => {
-      const params = { Bucket: process.env.bucketName, Key: path };
+      const params = { Bucket: bucketName, Key: path };
       const command = new HeadObjectCommand(params);
 
       filesProcessed++;
