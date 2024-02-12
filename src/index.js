@@ -17,15 +17,6 @@ const connection = mysql.createConnection({
   database: "wrptest_2",
 });
 
-// const S3 = new S3Client({
-//   region: "auto",
-//   endpoint: process.env.s3Endpoint,
-//   credentials: {
-//     accessKeyId: process.env.accessKeyId,
-//     secretAccessKey: process.env.secretAccessKey,
-//   },
-// });
-
 const S3 = new S3Client({
   region: "auto",
   endpoint: s3Endpoint,
