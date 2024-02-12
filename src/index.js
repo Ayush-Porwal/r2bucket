@@ -8,7 +8,7 @@ const accessKeyId = "52d2a666e993b08710c56164c930032d";
 const secretAccessKey =
   "4a8300b620494f1b3a506c61f70fd43a4c5d6fe88e6105db373f383f0965543d";
 const s3Endpoint =
-  "https://34f62f615789b088af9130d959f70465.r2.cloudflarestorage.com/wrparchive";
+  "https://34f62f615789b088af9130d959f70465.r2.cloudflarestorage.com";
 
 const connection = mysql.createConnection({
   host: "localhost",
