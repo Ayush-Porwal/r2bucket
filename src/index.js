@@ -64,8 +64,8 @@ async function checkPictureExistence(pictureSubfolderMap, extensionObjectMap) {
     const subFolder = pictureSubfolderMap[pictureID];
     const pathsToCheck = [
       `images/${subFolder}/${pictureID}.${extensionObjectMap[pictureID]}`,
-      `previews/${subFolder}/${pictureID}.${extensionObjectMap[pictureID]}`,
-      `thumbnails/${subFolder}/${pictureID}.${extensionObjectMap[pictureID]}`,
+      `previews/${subFolder}/${pictureID}_s.jpeg`,
+      `thumbnails/${subFolder}/${pictureID}_t.jpeg`,
     ];
 
     pathsToCheck.forEach((path) => {
