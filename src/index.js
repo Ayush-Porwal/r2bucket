@@ -36,6 +36,7 @@ fs.createReadStream("new_corrected_path.csv")
     }, '${row.newPath.split("/")[0]}', '${row.newPath.split("/")[1]}', '${
       row.newPath.split("/")[2].split(".")[1]
     }');`;
+    console.log("inserting data...");
     connection.query(query, (err, result) => {
       if (err) {
         console.error("Error during insertion:", err);
