@@ -1,49 +1,79 @@
 import fs from "fs";
-import mysql from "mysql2";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import csv from "csv-parser";
 
-const connection = mysql.createConnection({
-  host: "localhost",
-  user: "root",
-  password: "yourpassword",
-  database: "yourdb",
+// My Bucket keys
+const bucketName = "newbucket";
+const accessKeyId = "1a9b063c28014644ad48072de55b0b80";
+const secretAccessKey =
+  "d8c26b0ee06315145aa0e7e632f9ed5f3c923bd7b838a672bb72671c562fbba8";
+const s3Endpoint =
+  "https://d984c28249dc714f79940c2b1f43e5f0.r2.cloudflarestorage.com";
+
+const S3 = new S3Client({
+  region: "auto",
+  endpoint: s3Endpoint,
+  credentials: {
+    accessKeyId: accessKeyId,
+    secretAccessKey: secretAccessKey,
+  },
 });
 
-connection.connect();
+function shouldUploadFile(row, fileName) {
+  return (
+    row.pathWhereItsNotFound.includes("images") &&
+    row.pictureID === fileName.split(".")[0]
+  );
+}
 
-const createTableQuery = `
-  CREATE TABLE IF NOT EXISTS updatedpictures (
-    pictureID int NOT NULL,
-    type varchar(20) NOT NULL,
-    currentfolder int NOT NULL,
-    extension varchar(15) NOT NULL
-  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-`;
+async function uploadFile(filePath, fileName) {
+  const fileStream = fs.createReadStream(filePath);
 
-connection.query(createTableQuery, (err, result) => {
-  if (err) {
-    console.error("Error creating table:", err);
-  } else {
-    console.log('Table "updatedpictures" created or already exists');
+  const uploadParams = {
+    Bucket: bucketName,
+    Key: fileName,
+    Body: fileStream,
+    ContentType: "image/tiff",
+  };
+
+  try {
+    const data = await S3.send(new PutObjectCommand(uploadParams));
+
+    if (data.$metadata.httpStatusCode === 200) {
+      console.log(`File ${fileName} uploaded successfully`);
+    } else {
+      console.log(`Failed to upload the file: ${fileName}`);
+    }
+  } catch (err) {
+    console.error("Error uploading file:", err);
   }
-});
+}
 
-fs.createReadStream("new_corrected_path.csv")
-  .pipe(csv())
-  .on("data", (row) => {
-    const query = `INSERT INTO updatedpictures (pictureID, type, currentfolder, extension) VALUES (${
-      row.pictureID
-    }, '${row.newPath.split("/")[0]}', '${row.newPath.split("/")[1]}', '${
-      row.newPath.split("/")[2].split(".")[1]
-    }');`;
-    console.log("inserting data...");
-    connection.query(query, (err, result) => {
-      if (err) {
-        console.error("Error during insertion:", err);
-      }
+function processCSV(folderPath, csvFilePath) {
+  fs.createReadStream(csvFilePath)
+    .pipe(csv({ separator: ";" }))
+    .on("data", (row) => {
+      const files = fs.readdirSync(folderPath);
+      files.forEach((file) => {
+        if (shouldUploadFile(row, file)) {
+          uploadFile(`${folderPath}/${file}`, row.pathWhereItsNotFound);
+        }
+      });
+    })
+    .on("end", () => {
+      console.log(
+        "CSV file processed successfully... file are still uploading, please do not close the application, wait for process to finish"
+      );
+    })
+    .on("error", (err) => {
+      console.error("Error processing CSV file:", err);
     });
-  })
-  .on("end", () => {
-    console.log("CSV file processed");
-    connection.end();
-  });
+}
+
+function main() {
+  const csvFilePath = "sample_new_missing_pictures.csv";
+  const folderPath = "tifs";
+  processCSV(folderPath, csvFilePath);
+}
+
+main();

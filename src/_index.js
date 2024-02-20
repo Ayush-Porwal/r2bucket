@@ -1,7 +1,11 @@
 import fs from "fs";
 import mysql from "mysql2";
-import { stringify } from "csv-stringify/sync";
-import { S3Client, HeadObjectCommand } from "@aws-sdk/client-s3";
+import { Stringifier } from "csv-stringify/sync";
+import {
+  S3Client,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
 
 const bucketName = "wrparchive";
 const accessKeyId = "52d2a666e993b08710c56164c930032d";
@@ -13,7 +17,7 @@ const s3Endpoint =
 const connection = mysql.createConnection({
   host: "localhost",
   user: "root",
-  password: "password",
+  password: "Cengage$29",
   database: "wrptest_2",
 });
 
@@ -26,112 +30,151 @@ const S3 = new S3Client({
   },
 });
 
-function getPictureDataAndExtension() {
-  return new Promise((resolve, reject) => {
-    connection.connect();
+// function getPictureDataAndExtension() {
+//   return new Promise((resolve, reject) => {
+//     connection.connect();
 
-    const query = `
-          SELECT pictureID, currentfolder, extension 
-          FROM picture
-      `;
+//     const query = `
+//           SELECT pictureID, currentfolder, extension
+//           FROM picture
+//       `;
 
-    connection.query(query, (error, results) => {
-      if (error) {
-        reject(error);
-      } else {
-        const extensionObject = {};
-        const pictureObject = {};
-        results.forEach((row) => {
-          extensionObject[row.pictureID] = row.extension;
-          pictureObject[row.pictureID] = row.currentfolder;
-        });
-        resolve([pictureObject, extensionObject]);
-      }
-    });
-    connection.end();
-  });
-}
+//     connection.query(query, (error, results) => {
+//       if (error) {
+//         reject(error);
+//       } else {
+//         const extensionObject = {};
+//         const pictureObject = {};
+//         results.forEach((row) => {
+//           extensionObject[row.pictureID] = row.extension;
+//           pictureObject[row.pictureID] = row.currentfolder;
+//         });
+//         resolve([pictureObject, extensionObject]);
+//       }
+//     });
+//     connection.end();
+//   });
+// }
 
-async function checkPictureExistence(pictureSubfolderMap, extensionObjectMap) {
-  const pictureNotFound = [];
-  const failedPictureIds = new Set();
-  const BATCH_SIZE = 50;
-  let filesProcessed = 0;
+// async function checkPictureExistence(pictureSubfolderMap, extensionObjectMap) {
+//   const pictureNotFound = [];
+//   const failedPictureIds = new Set();
+//   const BATCH_SIZE = 50;
+//   let filesProcessed = 0;
 
-  const pathChecks = [];
+//   const pathChecks = [];
 
-  for (const pictureID in pictureSubfolderMap) {
-    const subFolder = pictureSubfolderMap[pictureID];
-    const pathsToCheck = [
-      `images/${subFolder}/${pictureID}.${extensionObjectMap[pictureID]}`,
-      `previews/${subFolder}/${pictureID}_s.jpeg`,
-      `thumbnails/${subFolder}/${pictureID}_t.jpeg`,
-    ];
+//   for (const pictureID in pictureSubfolderMap) {
+//     const subFolder = pictureSubfolderMap[pictureID];
+//     const pathsToCheck = [
+//       `images/${subFolder}/${pictureID}.${extensionObjectMap[pictureID]}`,
+//       `previews/${subFolder}/${pictureID}_s.jpeg`,
+//       `thumbnails/${subFolder}/${pictureID}_t.jpeg`,
+//     ];
 
-    pathsToCheck.forEach((path) => {
-      pathChecks.push({ pictureID, path });
-    });
-  }
+//     pathsToCheck.forEach((path) => {
+//       pathChecks.push({ pictureID, path });
+//     });
+//   }
 
-  for (let i = 0; i < pathChecks.length; i += BATCH_SIZE) {
-    const batch = pathChecks.slice(i, i + BATCH_SIZE);
-    const promises = batch.map(({ pictureID, path }) => {
-      const params = { Bucket: bucketName, Key: path };
-      const command = new HeadObjectCommand(params);
+//   for (let i = 0; i < pathChecks.length; i += BATCH_SIZE) {
+//     const batch = pathChecks.slice(i, i + BATCH_SIZE);
+//     const promises = batch.map(({ pictureID, path }) => {
+//       const params = { Bucket: bucketName, Key: path };
+//       const command = new HeadObjectCommand(params);
 
-      filesProcessed++;
+//       filesProcessed++;
 
-      return S3.send(command)
-        .then(() => {})
-        .catch((err) => {
-          if (err.$metadata && err.$metadata.httpStatusCode === 404) {
-            pictureNotFound.push({ pictureID, pathWhereItsNotFound: path });
-          } else {
-            // network error or cloudflare errors, cant do anything about these except run the job again for these ids
-            console.error(`Error checking ${path}:`, JSON.stringify(err));
-            failedPictureIds.add(pictureID);
-          }
-        });
-    });
+//       return S3.send(command)
+//         .then(() => {})
+//         .catch((err) => {
+//           if (err.$metadata && err.$metadata.httpStatusCode === 404) {
+//             pictureNotFound.push({ pictureID, pathWhereItsNotFound: path });
+//           } else {
+//             // network error or cloudflare errors, cant do anything about these except run the job again for these ids
+//             console.error(`Error checking ${path}:`, JSON.stringify(err));
+//             failedPictureIds.add(pictureID);
+//           }
+//         });
+//     });
 
-    await Promise.all(promises);
+//     await Promise.all(promises);
 
-    console.log(`Processed ${filesProcessed} files so far...`);
-  }
-  return [pictureNotFound, failedPictureIds];
-}
+//     console.log(`Processed ${filesProcessed} files so far...`);
+//   }
+//   return [pictureNotFound, failedPictureIds];
+// }
 
-console.log("Fetching data from db");
-const [pictureSubfolderMap, extensionObjectMap] =
-  await getPictureDataAndExtension();
+async function listAndSaveObjects() {
+  const stringifier = new Stringifier({ header: true });
+  let continuationToken = null;
+  let totalFiles = 0;
 
-console.log("Looking for pictures path in r2 bucket");
-checkPictureExistence(pictureSubfolderMap, extensionObjectMap)
-  .then(([missingPictures, failedPictureIds]) => {
-    if (missingPictures.length > 0 || failedPictureIds.size > 0) {
-      if (missingPictures.length > 0) {
-        const missingPicturesCsvData = stringify(missingPictures, {
-          header: true,
-          columns: ["pictureID", "pathWhereItsNotFound"],
-        });
-        fs.writeFileSync("missing_pictures.csv", missingPicturesCsvData);
-      } else {
-        console.log("No pictureIDs are at incorrect path");
-      }
+  do {
+    const params = {
+      Bucket: bucketName,
+      ContinuationToken: continuationToken,
+    };
 
-      if (failedPictureIds.size > 0) {
-        const failedPictureIdsCsvData = stringify(
-          Array.from(failedPictureIds).map((id) => ({ pictureID: id })),
-          { header: true }
-        );
-        fs.writeFileSync("failed_picture_ids.csv", failedPictureIdsCsvData);
-      } else {
-        console.log("No pictureIDs failed");
-      }
-    } else {
-      console.log("All pictures found.");
+    try {
+      const data = await S3.listObjectsV2(params).promise();
+
+      // Process object data
+      data.Contents.forEach((object) => {
+        const row = {
+          key: object.Key,
+          size: object.Size,
+          lastModified: object.LastModified,
+          // Add more properties as needed
+        };
+        stringifier.write(row);
+      });
+
+      continuationToken = data.NextContinuationToken;
+    } catch (err) {
+      console.error("Error listing objects:", err);
     }
-  })
-  .catch((err) => {
-    console.error("Error running the function:", err);
+  } while (continuationToken);
+
+  // Save the output to a CSV file
+  stringifier.pipe(process.stdout).on("finish", () => {
+    console.log("CSV data generated.");
   });
+}
+
+listAndSaveObjects();
+
+// console.log("Fetching data from db");
+// const [pictureSubfolderMap, extensionObjectMap] =
+//   await getPictureDataAndExtension();
+
+// console.log("Looking for pictures path in r2 bucket");
+// checkPictureExistence(pictureSubfolderMap, extensionObjectMap)
+//   .then(([missingPictures, failedPictureIds]) => {
+//     if (missingPictures.length > 0 || failedPictureIds.size > 0) {
+//       if (missingPictures.length > 0) {
+//         const missingPicturesCsvData = stringify(missingPictures, {
+//           header: true,
+//           columns: ["pictureID", "pathWhereItsNotFound"],
+//         });
+//         fs.writeFileSync("missing_pictures.csv", missingPicturesCsvData);
+//       } else {
+//         console.log("No pictureIDs are at incorrect path");
+//       }
+
+//       if (failedPictureIds.size > 0) {
+//         const failedPictureIdsCsvData = stringify(
+//           Array.from(failedPictureIds).map((id) => ({ pictureID: id })),
+//           { header: true }
+//         );
+//         fs.writeFileSync("failed_picture_ids.csv", failedPictureIdsCsvData);
+//       } else {
+//         console.log("No pictureIDs failed");
+//       }
+//     } else {
+//       console.log("All pictures found.");
+//     }
+//   })
+//   .catch((err) => {
+//     console.error("Error running the function:", err);
+//   });
